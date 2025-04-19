@@ -42,14 +42,14 @@ import common
 
 def main():
   print("--- Starting main function ---")
-  print("Version de dv2:",4.14,"-"*50)
+  print("Version de dv2:",5,"-"*50)
   #configs = yaml.safe_load(
       #pathlib.Path(sys.argv[0]).parent / 'configs.yaml').read_text())
   
   #Se carga la configuración por defecto
   yaml = YAML()
   #configs = yaml.load((pathlib.Path(sys.argv[0]).parent / 'configs.yaml').read_text())
-  configs = yaml.load((pathlib.Path(sys.argv[0]).parent / 'mini_configs.yaml').read_text())
+  configs = yaml.load((pathlib.Path(sys.argv[0]).parent / 'full_configs.yaml').read_text())
   parsed, remaining = common.Flags(configs=['defaults']).parse(known_only=True)
   config = common.Config(configs['defaults'])
   for name in parsed.configs:
