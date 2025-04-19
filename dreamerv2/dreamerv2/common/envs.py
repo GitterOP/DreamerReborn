@@ -7,6 +7,7 @@ import traceback
 import cloudpickle
 import gym
 import numpy as np
+import cv2  # Import OpenCV
 
 
 class GymWrapper:
@@ -485,6 +486,71 @@ class ResizeImage:
     image = image.resize(self._size, self._Image.NEAREST)
     image = np.array(image)
     return image
+
+
+class CustomImageProcessing:
+    # Wrapper for custom image processing steps like resizing and object detection.
+
+    def __init__(self, env, size=(64, 64), key='image'):
+        self._env = env
+        self._size = tuple(size)  # Ensure size is a tuple for cv2
+        self._key = key
+
+    def __getattr__(self, name):
+        if name.startswith('__'):
+            raise AttributeError(name)
+        try:
+            return getattr(self._env, name)
+        except AttributeError:
+            raise ValueError(name)
+
+    @property
+    def obs_space(self):
+        spaces = self._env.obs_space.copy()
+        shape = self._size + spaces[self._key].shape[2:]
+        spaces[self._key] = gym.spaces.Box(0, 255, shape, np.uint8)
+        # Add space for object detection results if needed in the future
+        # spaces['detected_objects'] = ...
+        return spaces
+
+    def step(self, action):
+        obs = self._env.step(action)
+        obs[self._key] = self._resize(obs[self._key])
+        return obs
+
+    def reset(self):
+        obs = self._env.reset()
+        obs[self._key] = self._resize(obs[self._key])
+        return obs
+
+    def _resize(self, image):
+        # Store original shape characteristics
+        original_shape = image.shape
+        original_rank = len(original_shape)
+
+        # Determine the expected rank after resizing
+        # It should be rank 2 (H, W) + 1 if the original had a channel dimension
+        expected_rank = len(self._size) + (1 if original_rank > 2 else 0)
+
+        # Use cv2.resize
+        resized_image = cv2.resize(image, self._size, interpolation=cv2.INTER_NEAREST)
+        resized_rank = len(resized_image.shape)
+
+        # Add back channel dimension if it was removed by cv2.resize for single-channel images
+        # This happens when original_rank is 3, channel size is 1, but resized_rank becomes 2.
+        if resized_rank != expected_rank and original_rank == 3 and original_shape[2] == 1:
+             resized_image = np.expand_dims(resized_image, axis=-1)
+             # Update resized_rank after adding dimension
+             resized_rank = len(resized_image.shape)
+
+        # Check for other unexpected rank changes (optional warning)
+        if resized_rank != expected_rank:
+             print(f"Warning: Unexpected rank change during resize. Original: {original_shape}, Resized: {resized_image.shape}, Expected Rank: {expected_rank}")
+
+        # Ensure image remains in the correct format if it was changed by cv2 (e.g., channel order)
+        # Depending on the environment, you might need BGR -> RGB conversion or vice-versa
+        # If the input image is HWC and RGB, cv2.resize should maintain that.
+        return resized_image
 
 
 class RenderImage:

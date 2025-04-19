@@ -62,11 +62,15 @@ class Replay:
     self._enforce_limit()
 
   def dataset(self, batch, length):
-    example = next(iter(self._generate_chunks(length)))
+    example_sequence = next(iter(self._generate_chunks(length)))
+    output_signature = {
+        k: tf.TensorSpec(v.shape, v.dtype) for k, v in example_sequence.items()
+    }
+
     dataset = tf.data.Dataset.from_generator(
         lambda: self._generate_chunks(length),
-        {k: v.dtype for k, v in example.items()},
-        {k: v.shape for k, v in example.items()})
+        output_signature=output_signature
+    )
     dataset = dataset.batch(batch, drop_remainder=True)
     dataset = dataset.prefetch(5)
     return dataset

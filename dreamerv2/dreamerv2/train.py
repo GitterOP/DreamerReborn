@@ -42,8 +42,8 @@ import common
 
 def main():
   print("--- Starting main function ---")
-  print("Version de dv2:",2,"-"*50)
-  #configs = yaml.safe_load((
+  print("Version de dv2:",2.4,"-"*50)
+  #configs = yaml.safe_load(
       #pathlib.Path(sys.argv[0]).parent / 'configs.yaml').read_text())
   
   #Se carga la configuración por defecto
@@ -121,6 +121,8 @@ def main():
     else:
       raise NotImplementedError(suite)
     env = common.TimeLimit(env, config.time_limit)
+    # Apply the custom image processing wrapper (resizing + placeholder for detection)
+    env = common.CustomImageProcessing(env, size=(64, 64))
     return env
 
   #Función que registra las métricas de un episodio
