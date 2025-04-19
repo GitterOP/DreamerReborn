@@ -41,6 +41,7 @@ import common
 
 
 def main():
+  print("--- Starting main function ---")
   print("Version de dv2:",2,"-"*50)
   #configs = yaml.safe_load((
       #pathlib.Path(sys.argv[0]).parent / 'configs.yaml').read_text())
@@ -48,7 +49,7 @@ def main():
   #Se carga la configuración por defecto
   yaml = YAML()
   #configs = yaml.load((pathlib.Path(sys.argv[0]).parent / 'configs.yaml').read_text())
-  conconfigs = yaml.load((pathlib.Path(sys.argv[0]).parent / 'mini_configs.yaml').read_text())
+  configs = yaml.load((pathlib.Path(sys.argv[0]).parent / 'mini_configs.yaml').read_text())
   parsed, remaining = common.Flags(configs=['defaults']).parse(known_only=True)
   config = common.Config(configs['defaults'])
   for name in parsed.configs:
@@ -76,6 +77,7 @@ def main():
 
   #Se configuran los buffers de replay para el entrenamiento y la evaluación
   #Se configura el contador de pasos y el logger para registrar métricas
+  print("--- Setting up replay buffers and logger ---")
   train_replay = common.Replay(logdir / 'train_episodes', **config.replay)
   eval_replay = common.Replay(logdir / 'eval_episodes', **dict(
       capacity=config.replay.capacity // 10,
@@ -144,6 +146,7 @@ def main():
     logger.write()
 
   print('Create envs.')
+  print("--- Creating environments ---")
   #Se crean los entornos de entrenamiento y evaluación
   num_eval_envs = min(config.envs, config.eval_eps)
   if config.envs_parallel == 'none':
@@ -158,6 +161,7 @@ def main():
     eval_envs = [make_async_env('eval') for _ in range(eval_envs)]
   
   #Se configura el driver de entrenamiento y evaluación, define los callbacks para registrar métricas y guardar datos
+  print("--- Configuring drivers ---")
   act_space = train_envs[0].act_space
   obs_space = train_envs[0].obs_space
   train_driver = common.Driver(train_envs)
@@ -172,6 +176,7 @@ def main():
   #Se pre-entrena el agente con un agente aleatorio para llenar el buffer de replay
   prefill = max(0, config.prefill - train_replay.stats['total_steps'])
   if prefill:
+    print(f'--- Starting prefill ({prefill} steps) ---')
     print(f'Prefill dataset ({prefill} steps).')
     random_agent = common.RandomAgent(act_space)
     train_driver(random_agent, steps=prefill, episodes=1)
@@ -181,6 +186,7 @@ def main():
 
   #Se crea el agente y se entrena, si se ha guardado un checkpoint previo, se carga
   print('Create agent.')
+  print("--- Creating agent ---")
   train_dataset = iter(train_replay.dataset(**config.dataset))
   report_dataset = iter(train_replay.dataset(**config.dataset))
   eval_dataset = iter(eval_replay.dataset(**config.dataset))
@@ -200,10 +206,12 @@ def main():
   #Función que define el paso de entrenamiento
   def train_step(tran, worker):
     if should_train(step):
+      print(f'--- Training step {step.value} ---')
       for _ in range(config.train_steps):
         mets = train_agent(next(train_dataset))
         [metrics[key].append(value) for key, value in mets.items()]
     if should_log(step):
+      print(f'--- Logging step {step.value} ---')
       for name, values in metrics.items():
         logger.scalar(name, np.array(values, np.float64).mean())
         metrics[name].clear()
@@ -213,6 +221,7 @@ def main():
 
   #Función que define el paso de evaluación, se evalúa el agente y se guarda el checkpoint
   #Esto se realiza hasta cumplir con el número de pasos especificado en la configuración
+  print("--- Starting main training loop ---")
   while step < config.steps:
     logger.write()
     print('Start evaluation.')
@@ -221,6 +230,7 @@ def main():
     print('Start training.')
     train_driver(train_policy, steps=config.eval_every)
     agnt.save(logdir / 'variables.pkl')
+  print("--- Training finished ---")
   for env in train_envs + eval_envs:
     try:
       env.close()

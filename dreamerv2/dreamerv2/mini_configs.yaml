@@ -86,10 +86,10 @@ atari:
   decoder: {mlp_keys: '$^', cnn_keys: 'image'}
   time_limit: 300 #Time limit corto
   action_repeat: 4
-  steps: 1000 #Pocos pasos para un debug rapido
+  steps: 1500 #Pocos pasos para un debug rapido
   eval_every: 300 #Eval y log se modifican para que sean más cortos
   log_every: 300 #reducido
-  prefill: 100 #Prefill pequeño
+  prefill: 500 #Prefill pequeño
   train_every: 16
   clip_rewards: tanh
   rssm: {hidden: 2, deter: 2} #Menos capacidad para el modelo
