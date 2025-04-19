@@ -2,24 +2,28 @@ import tensorflow as tf
 from tensorflow.keras import mixed_precision as prec
 import tensorflow_probability as tfp # Import the main package
 tfd = tfp.distributions # Define the alias
+import numpy as np # Import numpy for parameter counting
 
 #Importa el modulo common (herraientas comunes)
 import common
 #Importa el modulo expl (exploración), define como se comporta la exploración aleatoria y la exploración de Plan2Explore (actor-critic)
 import expl 
 
+# Helper function to count parameters
+def count_params(module):
+    if hasattr(module, 'variables') and module.variables:
+        return np.sum([np.prod(v.shape.as_list()) for v in module.variables])
+    return 0
+
 
 class Agent(common.Module):
 
   def __init__(self, config, obs_space, act_space, step): #Inicializa el agente y world_model (lo gestiona)
-    print(f"[DEBUG Agent.__init__] Received obs_space type: {type(obs_space)}, content: {obs_space}")
-    print(f"[DEBUG Agent.__init__] Received act_space type: {type(act_space)}, content: {act_space}")
     self.config = config
     self.obs_space = obs_space
     self.act_space = act_space['action']
     self.step = step
     self.tfstep = tf.Variable(int(self.step), tf.int64)
-    print(f"[DEBUG Agent.__init__] Passing to WorldModel: obs_space type={type(obs_space)}")
     self.wm = WorldModel(config, obs_space, self.tfstep)
     self._task_behavior = ActorCritic(config, self.act_space, self.tfstep)
     if config.expl_behavior == 'greedy':
@@ -82,40 +86,53 @@ class Agent(common.Module):
   def report(self, data): #Reporta el estado del agente
     report = {}
     data = self.wm.preprocess(data)
-    # Iterate over the list of keys handled by the CNN decoder
-    for key in self.wm.heads['decoder']._cnn_outputs: # Use _cnn_outputs list
-      name = key.replace('/', '_')
-      report[f'openl_{name}'] = self.wm.video_pred(data, key)
+    decoder_head = self.wm.heads['decoder']
+    # Check if the decoder has CNN shapes defined
+    if hasattr(decoder_head, '_cnn_shapes') and decoder_head._cnn_shapes:
+        # Iterate over the keys the CNN decoder was built for
+        for key in decoder_head._cnn_shapes.keys(): # Use keys() from _cnn_shapes
+            # Ensure the key is actually expected in the video prediction keys
+            if key in self.config.log_keys_video:
+                 name = key.replace('/', '_')
     return report
 
 
 class WorldModel(common.Module):
 
   def __init__(self, config, obs_space, tfstep): #Inicializa el modelo del mundo (RSSM, encoder, decoder, reward, discount)
-    print(f"[DEBUG WorldModel.__init__] Received obs_space type: {type(obs_space)}, content: {obs_space}")
-    # Check if it's a gym.spaces.Dict and access .spaces accordingly
+    super().__init__() # Call super constructor
     if hasattr(obs_space, 'spaces') and isinstance(obs_space.spaces, dict):
-        print("[DEBUG WorldModel.__init__] Accessing obs_space.spaces.items()")
         shapes = {k: tuple(v.shape) for k, v in obs_space.spaces.items()}
     elif isinstance(obs_space, dict):
-        print("[DEBUG WorldModel.__init__] Accessing obs_space.items()")
         shapes = {k: tuple(v.shape) for k, v in obs_space.items()}
     else:
-        print(f"[ERROR WorldModel.__init__] obs_space is unexpected type: {type(obs_space)}")
-        # Raise an error or handle appropriately
         raise TypeError(f"obs_space must be a dict or have a .spaces attribute, got {type(obs_space)}")
     self.config = config
     self.tfstep = tfstep
-    self.rssm = common.EnsembleRSSM(**config.rssm)
+
     self.encoder = common.Encoder(shapes, **config.encoder)
+    encoder_params = count_params(self.encoder)
+
+    self.rssm = common.EnsembleRSSM(**config.rssm)
+    _ = self.rssm.initial(1)
+    rssm_params = count_params(self.rssm)
+
     self.heads = {}
     self.heads['decoder'] = common.Decoder(shapes, **config.decoder)
+    decoder_params = count_params(self.heads['decoder'])
+
     self.heads['reward'] = common.MLP({'reward': []}, **config.reward_head)
+    reward_params = count_params(self.heads['reward'])
+
+    discount_params = 0
     if config.pred_discount:
       self.heads['discount'] = common.MLP({'discount': []}, **config.discount_head)
+      discount_params = count_params(self.heads['discount'])
+
     for name in config.grad_heads:
       assert name in self.heads, name
     self.model_opt = common.Optimizer('model', **config.model_opt)
+
 
   @tf.function
   def train(self, data, state=None): #Entrena el modelo del mundo, calcula la pérdida del modelo y ¿actualiza las métricas?
@@ -236,11 +253,16 @@ class WorldModel(common.Module):
     embed = self.encoder(data)
     states, _ = self.rssm.observe(
         embed[:6, :5], data['action'][:6, :5], data['is_first'][:6, :5])
-    recon = decoder(self.rssm.get_feat(states))[key].mode()[:6]
+    recon = decoder(self.rssm.get_feat(states))[key].mode()[:6] # Shape (6, 5, H, W, C)
     init = {k: v[:, -1] for k, v in states.items()}
     prior = self.rssm.imagine(data['action'][:6, 5:], init)
-    openl = decoder(self.rssm.get_feat(prior))[key].mode()
-    model = tf.concat([recon[:, :5] + 0.5, openl + 0.5], 1)
+    openl = decoder(self.rssm.get_feat(prior))[key].mode() # Shape (L-5, 6, H, W, C)
+
+    # Transpose openl to (6, L-5, H, W, C) before concatenation
+    openl_transposed = tf.transpose(openl, [1, 0, 2, 3, 4])
+
+    # Concatenate along axis 1 (time)
+    model = tf.concat([recon[:, :5] + 0.5, openl_transposed + 0.5], 1) # Use openl_transposed
     error = (model - truth + 1) / 2
     video = tf.concat([truth, model, error], 2)
     B, T, H, W, C = video.shape
