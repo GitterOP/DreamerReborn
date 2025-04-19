@@ -10,6 +10,8 @@ defaults:
   render_size: [64, 64]
   dmc_camera: -1
   atari_grayscale: True
+  atari_render_size: [64, 64]  # Add default Atari render size
+  atari_process_size: [64, 64] # Add default Atari process size
   time_limit: 0
   action_repeat: 2
   steps: 1e4
@@ -29,6 +31,10 @@ defaults:
   log_keys_max: '^$'
   precision: 16
   jit: True
+
+  # Pacman Detection defaults
+  pacman_threshold: 0.87
+  pacman_templates_path: 'dreamerv2/templates/' # Path relative to project root or absolute
 
   # Agent
   clip_rewards: tanh
@@ -82,8 +88,10 @@ defaults:
 atari:
 
   task: atari_ms_pacman
-  encoder: {mlp_keys: '$^', cnn_keys: 'image'}
-  decoder: {mlp_keys: '$^', cnn_keys: 'image'}
+  atari_render_size: [128, 128] # Initial size for detection
+  atari_process_size: [64, 64]  # Final size for model input
+  encoder: {mlp_keys: '$^', cnn_keys: 'image'} #encoder: {mlp_keys: '$^', cnn_keys: 'image,pacman_mask'} # Add pacman_mask
+  decoder: {mlp_keys: '$^', cnn_keys: 'image'} #decoder: {mlp_keys: '$^', cnn_keys: 'image,pacman_mask'} # Add pacman_mask
   time_limit: 300 #Time limit corto
   action_repeat: 4
   steps: 1500 #Pocos pasos para un debug rapido

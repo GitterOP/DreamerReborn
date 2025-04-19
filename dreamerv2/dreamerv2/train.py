@@ -42,7 +42,7 @@ import common
 
 def main():
   print("--- Starting main function ---")
-  print("Version de dv2:",2.4,"-"*50)
+  print("Version de dv2:",3.11,"-"*50)
   #configs = yaml.safe_load(
       #pathlib.Path(sys.argv[0]).parent / 'configs.yaml').read_text())
   
@@ -107,11 +107,20 @@ def main():
           task, config.action_repeat, config.render_size, config.dmc_camera)
       env = common.NormalizeAction(env)
     elif suite == 'atari':
+      # Use atari_render_size for initial Atari wrapper size
       env = common.Atari(
-          task, config.action_repeat, config.render_size,
+          task, config.action_repeat, config.atari_render_size,
           config.atari_grayscale)
-      print(f"Creando entorno de Atari: {task}")  # Añade esta línea para verificar el entorno
+      print(f"Creando entorno de Atari: {task} con render size {config.atari_render_size}")
       env = common.OneHotAction(env)
+      # Add Pacman detection and resizing wrapper
+      env = common.PacmanDetectionAndResizeWrapper(
+          env,
+          template_path=config.pacman_templates_path,
+          threshold=config.pacman_threshold,
+          process_size=config.atari_process_size # Final size (e.g., 64x64)
+      )
+      print(f"Aplicado PacmanDetectionAndResizeWrapper, procesando a {config.atari_process_size}")
     elif suite == 'crafter':
       assert config.action_repeat == 1
       outdir = logdir / 'crafter' if mode == 'train' else None
@@ -121,8 +130,6 @@ def main():
     else:
       raise NotImplementedError(suite)
     env = common.TimeLimit(env, config.time_limit)
-    # Apply the custom image processing wrapper (resizing + placeholder for detection)
-    env = common.CustomImageProcessing(env, size=(64, 64))
     return env
 
   #Función que registra las métricas de un episodio
@@ -164,8 +171,14 @@ def main():
   
   #Se configura el driver de entrenamiento y evaluación, define los callbacks para registrar métricas y guardar datos
   print("--- Configuring drivers ---")
-  act_space = train_envs[0].act_space
-  obs_space = train_envs[0].obs_space
+  _train_envs_for_space = [make_env('train') for _ in range(1)]
+  act_space = _train_envs_for_space[0].act_space
+  obs_space = _train_envs_for_space[0].obs_space
+  print("Final Observation Space:", obs_space) # Log final obs space
+  print(f"[DEBUG train.py] obs_space type: {type(obs_space)}, content: {obs_space}")
+  print(f"[DEBUG train.py] act_space type: {type(act_space)}, content: {act_space}")
+  _train_envs_for_space[0].close() # Close the temporary env
+
   train_driver = common.Driver(train_envs)
   train_driver.on_episode(lambda ep: per_episode(ep, mode='train'))
   train_driver.on_step(lambda tran, worker: step.increment())
@@ -192,6 +205,7 @@ def main():
   train_dataset = iter(train_replay.dataset(**config.dataset))
   report_dataset = iter(train_replay.dataset(**config.dataset))
   eval_dataset = iter(eval_replay.dataset(**config.dataset))
+  print(f"[DEBUG train.py] Passing to Agent: obs_space type={type(obs_space)}, act_space type={type(act_space)}")
   agnt = agent.Agent(config, obs_space, act_space, step)
   train_agent = common.CarryOverState(agnt.train)
   train_agent(next(train_dataset))

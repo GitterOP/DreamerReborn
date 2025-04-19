@@ -10,11 +10,14 @@ import expl
 class Agent(common.Module):
 
   def __init__(self, config, obs_space, act_space, step): #Inicializa el agente y world_model (lo gestiona)
+    print(f"[DEBUG Agent.__init__] Received obs_space type: {type(obs_space)}, content: {obs_space}")
+    print(f"[DEBUG Agent.__init__] Received act_space type: {type(act_space)}, content: {act_space}")
     self.config = config
     self.obs_space = obs_space
     self.act_space = act_space['action']
     self.step = step
     self.tfstep = tf.Variable(int(self.step), tf.int64)
+    print(f"[DEBUG Agent.__init__] Passing to WorldModel: obs_space type={type(obs_space)}")
     self.wm = WorldModel(config, obs_space, self.tfstep)
     self._task_behavior = ActorCritic(config, self.act_space, self.tfstep)
     if config.expl_behavior == 'greedy':
@@ -83,7 +86,18 @@ class Agent(common.Module):
 class WorldModel(common.Module):
 
   def __init__(self, config, obs_space, tfstep): #Inicializa el modelo del mundo (RSSM, encoder, decoder, reward, discount)
-    shapes = {k: tuple(v.shape) for k, v in obs_space.items()}
+    print(f"[DEBUG WorldModel.__init__] Received obs_space type: {type(obs_space)}, content: {obs_space}")
+    # Check if it's a gym.spaces.Dict and access .spaces accordingly
+    if hasattr(obs_space, 'spaces') and isinstance(obs_space.spaces, dict):
+        print("[DEBUG WorldModel.__init__] Accessing obs_space.spaces.items()")
+        shapes = {k: tuple(v.shape) for k, v in obs_space.spaces.items()}
+    elif isinstance(obs_space, dict):
+        print("[DEBUG WorldModel.__init__] Accessing obs_space.items()")
+        shapes = {k: tuple(v.shape) for k, v in obs_space.items()}
+    else:
+        print(f"[ERROR WorldModel.__init__] obs_space is unexpected type: {type(obs_space)}")
+        # Raise an error or handle appropriately
+        raise TypeError(f"obs_space must be a dict or have a .spaces attribute, got {type(obs_space)}")
     self.config = config
     self.tfstep = tfstep
     self.rssm = common.EnsembleRSSM(**config.rssm)

@@ -40,13 +40,49 @@ class Driver:
         self._eps[i] = [tran]
       obs = {k: np.stack([o[k] for o in self._obs]) for k in self._obs[0]}
       actions, self._state = policy(obs, self._state, **self._kwargs)
-      actions = [
-          {k: np.array(actions[k][i]) for k in actions}
-          for i in range(len(self._envs))]
-      assert len(actions) == len(self._envs)
-      obs = [e.step(a) for e, a in zip(self._envs, actions)]
+      #print(f"[DEBUG Driver.__call__] Policy output 'actions' type: {type(actions)}")
+      if isinstance(actions, dict):
+          #print(f"  Keys: {list(actions.keys())}")
+          first_key = list(actions.keys())[0]
+          action_example = actions[first_key]
+          is_batched = hasattr(action_example, 'shape') and len(action_example.shape) > len(self._act_spaces[0][first_key].shape)
+          #print(f"  Inferred is_batched: {is_batched} (based on shape {getattr(action_example, 'shape', 'N/A')})")
+
+          #for k, v in actions.items():
+              #print(f"  Key '{k}': type={type(v)}, shape={getattr(v, 'shape', 'N/A')}")
+      else:
+          #print(f"  Actions is not a dict, type: {type(actions)}")
+          is_batched = hasattr(actions, 'shape') and len(actions.shape) > len(self._act_spaces[0]['action'].shape)
+          action_example = actions
+
+      if isinstance(actions, tuple):
+        actions, self._state = actions
+
+      processed_actions = []
+      num_envs = len(self._envs)
+      for i in range(num_envs):
+          env_action = {}
+          for k, v in actions.items():
+              if is_batched:
+                  action_for_env = v[i]
+              else:
+                  assert num_envs == 1, "Policy returned unbatched action but num_envs > 1"
+                  action_for_env = v
+              env_action[k] = np.array(action_for_env)
+          processed_actions.append(env_action)
+
+      actions_per_env = processed_actions
+      #print(f"[DEBUG Driver.__call__] Processed 'actions_per_env' (first env): type={type(actions_per_env[0])}")
+      if isinstance(actions_per_env[0], dict):
+         pass
+          #print(f"  Keys: {list(actions_per_env[0].keys())}")
+          #for k, v in actions_per_env[0].items():
+              #print(f"  Key '{k}': type={type(v)}, shape={getattr(v, 'shape', 'N/A')}")
+
+      assert len(actions_per_env) == len(self._envs)
+      obs = [e.step(a) for e, a in zip(self._envs, actions_per_env)]
       obs = [ob() if callable(ob) else ob for ob in obs]
-      for i, (act, ob) in enumerate(zip(actions, obs)):
+      for i, (act, ob) in enumerate(zip(actions_per_env, obs)):
         tran = {k: self._convert(v) for k, v in {**ob, **act}.items()}
         [fn(tran, worker=i, **self._kwargs) for fn in self._on_steps]
         self._eps[i].append(tran)

@@ -14,20 +14,36 @@ from . import tfutils
 class RandomAgent:
 
   def __init__(self, act_space, logprob=False):
-    self.act_space = act_space['action']
-    self.logprob = logprob
-    if hasattr(self.act_space, 'n'):
-      self._dist = dists.OneHotDist(tf.zeros(self.act_space.n))
+    self.act_space = act_space
+    self._logprob = logprob
+    if isinstance(act_space, dict):
+        self._action_key = 'action'
+        action_space_to_sample = act_space[self._action_key]
     else:
-      dist = tfd.Uniform(self.act_space.low, self.act_space.high)
+        self._action_key = None
+        action_space_to_sample = act_space
+
+    if hasattr(action_space_to_sample, 'n'):
+      self._dist = dists.OneHotDist(tf.zeros(action_space_to_sample.n))
+    else:
+      dist = tfd.Uniform(action_space_to_sample.low, action_space_to_sample.high)
       self._dist = tfd.Independent(dist, 1)
 
   def __call__(self, obs, state=None, mode=None):
-    action = self._dist.sample(len(obs['is_first']))
-    output = {'action': action}
-    if self.logprob:
-      output['logprob'] = self._dist.log_prob(action)
-    return output, None
+    action = self._dist.sample()
+    #print(f"[DEBUG RandomAgent.__call__] Sampled raw action type: {type(action)}, shape: {getattr(action, 'shape', 'N/A')}, dtype: {getattr(action, 'dtype', 'N/A')}")
+    if self._action_key:
+        output_action = {self._action_key: action}
+        #print(f"[DEBUG RandomAgent.__call__] Sampled action wrapped in dict with key '{self._action_key}'")
+    else:
+        output_action = action
+        #print(f"[DEBUG RandomAgent.__call__] Sampled action (single space)")
+
+    logprob = self._dist.log_prob(action)
+    if self._logprob:
+      return output_action, state, {'logprob': logprob}
+    else:
+      return output_action, state
 
 
 def static_scan(fn, inputs, start, reverse=False):

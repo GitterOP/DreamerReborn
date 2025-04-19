@@ -50,7 +50,7 @@ class Replay:
   def add_episode(self, episode):
     length = eplen(episode)
     if length < self._minlen:
-      print(f'Skipping short episode of length {length}.')
+      #print(f'Skipping short episode of length {length}.')
       return
     self._total_steps += length
     self._loaded_steps += length
