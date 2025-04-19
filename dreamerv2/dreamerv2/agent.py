@@ -1,5 +1,7 @@
 import tensorflow as tf
 from tensorflow.keras import mixed_precision as prec
+import tensorflow_probability as tfp # Import the main package
+tfd = tfp.distributions # Define the alias
 
 #Importa el modulo common (herraientas comunes)
 import common
@@ -25,7 +27,7 @@ class Agent(common.Module):
     else:
       self._expl_behavior = getattr(expl, config.expl_behavior)(
           self.config, self.act_space, self.wm, self.tfstep,
-          lambda seq: self.wm.heads['reward'](seq['feat']).mode())
+          lambda seq: self.wm.heads['reward'](seq['feat'])['reward'].mode())
 
   @tf.function
   def policy(self, obs, state=None, mode='train'): #Define la política del agente
@@ -43,15 +45,18 @@ class Agent(common.Module):
         latent, action, embed, obs['is_first'], sample)
     feat = self.wm.rssm.get_feat(latent)
     if mode == 'eval':
-      actor = self._task_behavior.actor(feat)
+      # Access 'action' key before calling mode()
+      actor = self._task_behavior.actor(feat)['action']
       action = actor.mode()
       noise = self.config.eval_noise
     elif mode == 'explore':
-      actor = self._expl_behavior.actor(feat)
+      # Access 'action' key before calling sample()
+      actor = self._expl_behavior.actor(feat)['action']
       action = actor.sample()
       noise = self.config.expl_noise
     elif mode == 'train':
-      actor = self._task_behavior.actor(feat)
+      # Access 'action' key before calling sample()
+      actor = self._task_behavior.actor(feat)['action']
       action = actor.sample()
       noise = self.config.expl_noise
     action = common.action_noise(action, noise, self.act_space)
@@ -65,7 +70,7 @@ class Agent(common.Module):
     state, outputs, mets = self.wm.train(data, state)
     metrics.update(mets)
     start = outputs['post']
-    reward = lambda seq: self.wm.heads['reward'](seq['feat']).mode()
+    reward = lambda seq: self.wm.heads['reward'](seq['feat'])['reward'].mode()
     metrics.update(self._task_behavior.train(
         self.wm, start, data['is_terminal'], reward))
     if self.config.expl_behavior != 'greedy':
@@ -77,7 +82,8 @@ class Agent(common.Module):
   def report(self, data): #Reporta el estado del agente
     report = {}
     data = self.wm.preprocess(data)
-    for key in self.wm.heads['decoder'].cnn_keys:
+    # Iterate over the list of keys handled by the CNN decoder
+    for key in self.wm.heads['decoder']._cnn_outputs: # Use _cnn_outputs list
       name = key.replace('/', '_')
       report[f'openl_{name}'] = self.wm.video_pred(data, key)
     return report
@@ -104,13 +110,14 @@ class WorldModel(common.Module):
     self.encoder = common.Encoder(shapes, **config.encoder)
     self.heads = {}
     self.heads['decoder'] = common.Decoder(shapes, **config.decoder)
-    self.heads['reward'] = common.MLP([], **config.reward_head)
+    self.heads['reward'] = common.MLP({'reward': []}, **config.reward_head)
     if config.pred_discount:
-      self.heads['discount'] = common.MLP([], **config.discount_head)
+      self.heads['discount'] = common.MLP({'discount': []}, **config.discount_head)
     for name in config.grad_heads:
       assert name in self.heads, name
     self.model_opt = common.Optimizer('model', **config.model_opt)
 
+  @tf.function
   def train(self, data, state=None): #Entrena el modelo del mundo, calcula la pérdida del modelo y ¿actualiza las métricas?
     with tf.GradientTape() as model_tape:
       model_loss, state, outputs, metrics = self.loss(data, state)
@@ -118,6 +125,7 @@ class WorldModel(common.Module):
     metrics.update(self.model_opt(model_tape, model_loss, modules))
     return state, outputs, metrics
 
+  @tf.function
   def loss(self, data, state=None): #Procesa los datos y calcula la pérdida del modelo
     data = self.preprocess(data)
     embed = self.encoder(data)
@@ -134,9 +142,28 @@ class WorldModel(common.Module):
       out = head(inp)
       dists = out if isinstance(out, dict) else {name: out}
       for key, dist in dists.items():
-        like = tf.cast(dist.log_prob(data[key]), tf.float32)
+        if key not in data:
+             continue # Skip loss calculation for this key if data is missing
+
+        target = data[key]
+        target_shape = tf.shape(target) # e.g., (B, T) or (B, T, H, W, C)
+        dist_event_rank = len(dist.event_shape_tensor())
+
+        is_batch_reshaped = isinstance(dist, tfd.BatchReshape)
+        is_scalar_event = (dist_event_rank == 0)
+
+        if is_batch_reshaped and is_scalar_event:
+            reshaped_target = target
+        else:
+            batch_size = target_shape[0]
+            time_length = target_shape[1]
+            event_shape = target_shape[len(target_shape)-dist_event_rank:] # Get event dims dynamically
+            new_shape = tf.concat([[batch_size * time_length], event_shape], axis=0)
+            reshaped_target = tf.reshape(target, new_shape)
+
+        like = tf.cast(dist.log_prob(reshaped_target), tf.float32)
         likes[key] = like
-        losses[key] = -like.mean()
+        losses[key] = -tf.reduce_mean(like)
     model_loss = sum(
         self.config.loss_scales.get(k, 1.0) * v for k, v in losses.items())
     outs = dict(
@@ -153,28 +180,27 @@ class WorldModel(common.Module):
     flatten = lambda x: x.reshape([-1] + list(x.shape[2:]))
     start = {k: flatten(v) for k, v in start.items()}
     start['feat'] = self.rssm.get_feat(start)
-    start['action'] = tf.zeros_like(policy(start['feat']).mode())
+    # Access the 'action' key from the policy output dict before calling mode()
+    start['action'] = tf.zeros_like(policy(start['feat'])['action'].mode())
     seq = {k: [v] for k, v in start.items()}
     for _ in range(horizon):
-      action = policy(tf.stop_gradient(seq['feat'][-1])).sample()
+      # Access the 'action' key from the policy output dict before calling sample()
+      action = policy(tf.stop_gradient(seq['feat'][-1]))['action'].sample()
       state = self.rssm.img_step({k: v[-1] for k, v in seq.items()}, action)
       feat = self.rssm.get_feat(state)
       for key, value in {**state, 'action': action, 'feat': feat}.items():
         seq[key].append(value)
     seq = {k: tf.stack(v, 0) for k, v in seq.items()}
     if 'discount' in self.heads:
-      disc = self.heads['discount'](seq['feat']).mean()
+      # Access the 'discount' key from the head output dict before calling mean()
+      disc = self.heads['discount'](seq['feat'])['discount'].mean()
       if is_terminal is not None:
-        # Override discount prediction for the first step with the true
-        # discount factor from the replay buffer.
         true_first = 1.0 - flatten(is_terminal).astype(disc.dtype)
         true_first *= self.config.discount
         disc = tf.concat([true_first[None], disc[1:]], 0)
     else:
       disc = self.config.discount * tf.ones(seq['feat'].shape[:-1])
     seq['discount'] = disc
-    # Shift discount factors because they imply whether the following state
-    # will be valid, not whether the current state is valid.
     seq['weight'] = tf.math.cumprod(
         tf.concat([tf.ones_like(disc[:1]), disc[:-1]], 0), 0)
     return seq
@@ -189,7 +215,10 @@ class WorldModel(common.Module):
       if value.dtype == tf.int32:
         value = value.astype(dtype)
       if value.dtype == tf.uint8:
-        value = value.astype(dtype) / 255.0 - 0.5
+        if key == 'pacman_mask':
+             value = value.astype(dtype)
+        else:
+             value = value.astype(dtype) / 255.0 - 0.5
       obs[key] = value
     obs['reward'] = {
         'identity': tf.identity,
@@ -231,10 +260,10 @@ class ActorCritic(common.Module):
     if self.config.actor_grad == 'auto':
       self.config = self.config.update({
           'actor_grad': 'reinforce' if discrete else 'dynamics'})
-    self.actor = common.MLP(act_space.shape[0], **self.config.actor)
-    self.critic = common.MLP([], **self.config.critic)
+    self.actor = common.MLP({'action': act_space.shape}, **self.config.actor)
+    self.critic = common.MLP({'critic': []}, **self.config.critic)
     if self.config.slow_target:
-      self._target_critic = common.MLP([], **self.config.critic)
+      self._target_critic = common.MLP({'critic': []}, **self.config.critic)
       self._updates = tf.Variable(0, tf.int64)
     else:
       self._target_critic = self.critic
@@ -245,11 +274,6 @@ class ActorCritic(common.Module):
   def train(self, world_model, start, is_terminal, reward_fn): #Entrena el actor-critic
     metrics = {}
     hor = self.config.imag_horizon
-    # The weights are is_terminal flags for the imagination start states.
-    # Technically, they should multiply the losses from the second trajectory
-    # step onwards, which is the first imagined step. However, we are not
-    # training the action that led into the first step anyway, so we can use
-    # them to scale the whole sequence.
     with tf.GradientTape() as actor_tape:
       seq = world_model.imagine(self.actor, start, is_terminal, hor)
       reward = reward_fn(seq)
@@ -262,34 +286,24 @@ class ActorCritic(common.Module):
     metrics.update(self.actor_opt(actor_tape, actor_loss, self.actor))
     metrics.update(self.critic_opt(critic_tape, critic_loss, self.critic))
     metrics.update(**mets1, **mets2, **mets3, **mets4)
-    self.update_slow_target()  # Variables exist after first forward pass.
+    self.update_slow_target()
     return metrics
 
   def actor_loss(self, seq, target): #Calcula la pérdida del actor
-    # Actions:      0   [a1]  [a2]   a3
-    #                  ^  |  ^  |  ^  |
-    #                 /   v /   v /   v
-    # States:     [z0]->[z1]-> z2 -> z3
-    # Targets:     t0   [t1]  [t2]
-    # Baselines:  [v0]  [v1]   v2    v3
-    # Entropies:        [e1]  [e2]
-    # Weights:    [ 1]  [w1]   w2    w3
-    # Loss:              l1    l2
     metrics = {}
-    # Two states are lost at the end of the trajectory, one for the boostrap
-    # value prediction and one because the corresponding action does not lead
-    # anywhere anymore. One target is lost at the start of the trajectory
-    # because the initial state comes from the replay buffer.
-    policy = self.actor(tf.stop_gradient(seq['feat'][:-2]))
+    # Access the 'action' key from the policy output dict
+    policy = self.actor(tf.stop_gradient(seq['feat'][:-2]))['action']
     if self.config.actor_grad == 'dynamics':
       objective = target[1:]
     elif self.config.actor_grad == 'reinforce':
-      baseline = self._target_critic(seq['feat'][:-2]).mode()
+      # Access the 'critic' key from the critic output dict
+      baseline = self._target_critic(seq['feat'][:-2])['critic'].mode()
       advantage = tf.stop_gradient(target[1:] - baseline)
       action = tf.stop_gradient(seq['action'][1:-1])
       objective = policy.log_prob(action) * advantage
     elif self.config.actor_grad == 'both':
-      baseline = self._target_critic(seq['feat'][:-2]).mode()
+      # Access the 'critic' key from the critic output dict
+      baseline = self._target_critic(seq['feat'][:-2])['critic'].mode()
       advantage = tf.stop_gradient(target[1:] - baseline)
       objective = policy.log_prob(seq['action'][1:-1]) * advantage
       mix = common.schedule(self.config.actor_grad_mix, self.tfstep)
@@ -307,13 +321,8 @@ class ActorCritic(common.Module):
     return actor_loss, metrics
 
   def critic_loss(self, seq, target): #Calcula la pérdida del crítico
-    # States:     [z0]  [z1]  [z2]   z3
-    # Rewards:    [r0]  [r1]  [r2]   r3
-    # Values:     [v0]  [v1]  [v2]   v3
-    # Weights:    [ 1]  [w1]  [w2]   w3
-    # Targets:    [t0]  [t1]  [t2]
-    # Loss:        l0    l1    l2
-    dist = self.critic(seq['feat'][:-1])
+    # Access the 'critic' key from the critic output dict
+    dist = self.critic(seq['feat'][:-1])['critic']
     target = tf.stop_gradient(target)
     weight = tf.stop_gradient(seq['weight'])
     critic_loss = -(dist.log_prob(target) * weight[:-1]).mean()
@@ -321,15 +330,10 @@ class ActorCritic(common.Module):
     return critic_loss, metrics
 
   def target(self, seq): #Esta función calcula el objetivo del crítico
-    # States:     [z0]  [z1]  [z2]  [z3]
-    # Rewards:    [r0]  [r1]  [r2]   r3
-    # Values:     [v0]  [v1]  [v2]  [v3]
-    # Discount:   [d0]  [d1]  [d2]   d3
-    # Targets:     t0    t1    t2
     reward = tf.cast(seq['reward'], tf.float32)
     disc = tf.cast(seq['discount'], tf.float32)
-    value = self._target_critic(seq['feat']).mode()
-    # Skipping last time step because it is used for bootstrapping.
+    # Access the 'critic' key from the critic output dict
+    value = self._target_critic(seq['feat'])['critic'].mode()
     target = common.lambda_return(
         reward[:-1], value[:-1], disc[:-1],
         bootstrap=value[-1],

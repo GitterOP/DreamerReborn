@@ -39,7 +39,7 @@ RUN pip3 install --upgrade pip
 
 # Python packages.
 RUN pip3 install --no-cache-dir \
-  gym==0.17.3 \ 
+  gym==0.17.3 \
   atari_py \
   crafter \
   tensorflow_probability==0.12.2

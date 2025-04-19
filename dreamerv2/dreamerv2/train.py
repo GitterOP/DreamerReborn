@@ -42,7 +42,7 @@ import common
 
 def main():
   print("--- Starting main function ---")
-  print("Version de dv2:",3.11,"-"*50)
+  print("Version de dv2:",4.10,"-"*50)
   #configs = yaml.safe_load(
       #pathlib.Path(sys.argv[0]).parent / 'configs.yaml').read_text())
   
