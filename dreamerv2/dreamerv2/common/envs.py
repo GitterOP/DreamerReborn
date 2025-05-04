@@ -627,8 +627,8 @@ class OneHotAction:
 
 class PacmanDetectionAndResizeWrapper(GymWrapper): # Reverted class name
     """
-    Detects Ghosts using RAM state on processed input frames,
-    generates a binary mask with a 9x9 patch around each ghost's scaled coordinates,
+    Detects Pills and PowerPills using RAM state on processed input frames,
+    generates a binary mask setting a pixel to 1 at each item's scaled coordinates,
     and stores it under the 'pacman_mask' key.
     """
     def __init__(self, env, process_size=(64, 64), image_key='image', mask_key='pacman_mask'): # Reverted mask_key default
@@ -643,7 +643,6 @@ class PacmanDetectionAndResizeWrapper(GymWrapper): # Reverted class name
         self._process_size = tuple(process_size)
         self._image_key = self._obs_key
         self._mask_key = mask_key # Will use 'pacman_mask' by default
-        self._patch_radius = 4 # Keep radius for 9x9 patch
 
         try:
             self.objects = _init_objects_ram(hud=False)
@@ -729,32 +728,31 @@ class PacmanDetectionAndResizeWrapper(GymWrapper): # Reverted class name
             try:
                 _detect_objects_ram(self.objects, ram_state, hud=False)
 
+                # Iterate through all detected objects to find Pills and PowerPills
                 #counter = 0
-                # Iterate through all detected objects to find ghosts (KEEP THIS LOGIC)
                 for obj in self.objects:
-                    if obj and obj.category == 'Ghost' and obj.visible and hasattr(obj, 'xy'):
+                    # Check if the object is a Pill or PowerPill
+                    if obj and obj.category in ['Pill', 'PowerPill'] and obj.visible and hasattr(obj, 'xy'):
                         raw_coords = obj.xy
                         scaled_x, scaled_y = self._scale_coords(*raw_coords)
-
-                        # Calculate 9x9 patch boundaries (using radius 4)
-                        y1 = max(0, scaled_y - self._patch_radius)
-                        y2 = min(self._process_size[0], scaled_y + self._patch_radius + 1)
-                        x1 = max(0, scaled_x - self._patch_radius)
-                        x2 = min(self._process_size[1], scaled_x + self._patch_radius + 1)
-
-                        #Muestra las coordenadas de la mascara
-                        #print(f"Ghost {counter+1} coordinates: ({scaled_x}, {scaled_y})")
+                        
                         #counter += 1
 
-                        # Set the patch area to 1 in the mask
-                        mask[y1:y2, x1:x2] = 1
-                      
+                        # Set the single pixel at the scaled coordinates to 1
+                        # Ensure coordinates are within bounds (although _scale_coords should handle this)
+                        if 0 <= scaled_y < self._process_size[0] and 0 <= scaled_x < self._process_size[1]:
+                            mask[scaled_y, scaled_x] = 1
+                #print(f"[DEBUG] Detected {counter} objects in RAM state.")
+
             except IndexError:
+                 # Handle cases where RAM might be inconsistent
                  pass
             except Exception as e:
-                pass
+                # Log other potential errors during detection/scaling
+                # print(f"Error processing RAM for pill detection: {e}") # Optional debug
+                pass # Keep mask as zeros if error occurs
 
-        obs[self._mask_key] = mask # Assign the generated GHOST mask to the key (now 'pacman_mask')
+        obs[self._mask_key] = mask # Assign the generated PILL mask to the key (still 'pacman_mask')
 
         # Remove obsolete keys if they somehow persist
         if 'ghost_mask' in obs and self._mask_key != 'ghost_mask':
