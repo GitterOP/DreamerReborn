@@ -94,7 +94,7 @@ atari:
   decoder: {mlp_keys: '$^', cnn_keys: 'image,pacman_mask'} # Add pacman_mask
   time_limit: 27000 #Time limit corto
   action_repeat: 4
-  steps: 1e6 #Pocos pasos para un debug rapido
+  steps: 2.5e6 #Pocos pasos para un debug rapido
   eval_every: 2.5e4 #Eval y log se modifican para que sean más cortos
   log_every: 1e4 #reducido
   prefill: 50000 #Prefill pequeño

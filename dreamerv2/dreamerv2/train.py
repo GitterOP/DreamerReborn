@@ -44,7 +44,7 @@ import common
 def main():
   start_time = time.time() # Record start time
   print("--- Starting main function ---")
-  print("Version de dv2:",5,"-"*50)
+  print("Version de dv2:",1,"-"*50)
   #configs = yaml.safe_load(
       #pathlib.Path(sys.argv[0]).parent / 'configs.yaml').read_text())
   
