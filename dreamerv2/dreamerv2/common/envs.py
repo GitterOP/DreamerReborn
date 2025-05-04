@@ -625,12 +625,13 @@ class OneHotAction:
     return reference
 
 
-class PacmanDetectionAndResizeWrapper(GymWrapper):
+class PacmanDetectionAndResizeWrapper(GymWrapper): # Reverted class name
     """
-    Detects Pacman using RAM state on 64x64 input frames,
-    generates a 64x64 binary mask with a 7x7 patch around Pacman's scaled coordinates.
+    Detects Ghosts using RAM state on processed input frames,
+    generates a binary mask with a 9x9 patch around each ghost's scaled coordinates,
+    and stores it under the 'pacman_mask' key.
     """
-    def __init__(self, env, process_size=(64, 64), image_key='image', mask_key='pacman_mask'):
+    def __init__(self, env, process_size=(64, 64), image_key='image', mask_key='pacman_mask'): # Reverted mask_key default
         inner_obs_key = None
         try:
             inner_obs_key = getattr(env, '_obs_key', image_key)
@@ -641,14 +642,15 @@ class PacmanDetectionAndResizeWrapper(GymWrapper):
 
         self._process_size = tuple(process_size)
         self._image_key = self._obs_key
-        self._mask_key = mask_key
-        self._patch_radius = 3
+        self._mask_key = mask_key # Will use 'pacman_mask' by default
+        self._patch_radius = 4 # Keep radius for 9x9 patch
 
         try:
             self.objects = _init_objects_ram(hud=False)
         except Exception as e:
             raise e
 
+        # Ensure process_size is used for scaling factors
         self._SCALE_X = self._process_size[1] / 160
         self._SCALE_Y = self._process_size[0] / 194
         self._SHIFT_Y = 8
@@ -671,18 +673,26 @@ class PacmanDetectionAndResizeWrapper(GymWrapper):
 
             original_img_space = spaces[self._image_key]
 
+            # Ensure image shape uses process_size
             img_shape = self._process_size + original_img_space.shape[2:]
             spaces[self._image_key] = gym.spaces.Box(
                 low=0, high=255, shape=img_shape, dtype=np.uint8
             )
 
+            # Ensure mask shape uses process_size and the correct key (now 'pacman_mask' by default)
             mask_shape = self._process_size
             spaces[self._mask_key] = gym.spaces.Box(
                 low=0, high=1, shape=mask_shape, dtype=np.uint8
             )
 
-            if 'pacman_coords' in spaces: # Keep removing old key just in case
+            # Remove obsolete keys if they exist (including potential 'ghost_mask')
+            if 'ghost_mask' in spaces and self._mask_key != 'ghost_mask':
+                del spaces['ghost_mask']
+            if 'pacman_coords' in spaces:
                 del spaces['pacman_coords']
+            if 'pacman_coords_scaled' in spaces:
+                del spaces['pacman_coords_scaled']
+
 
             return gym.spaces.Dict(spaces)
         except Exception as e:
@@ -699,44 +709,58 @@ class PacmanDetectionAndResizeWrapper(GymWrapper):
         return self._process_obs(obs)
 
     def _process_obs(self, obs):
-        image_process_size = obs[self._image_key]
-        if image_process_size.shape[:2] != self._process_size:
-             image_process_size = cv2.resize(
-                 image_process_size,
-                 (self._process_size[1], self._process_size[0]),
+        # Resize image if necessary
+        image_to_process = obs[self._image_key]
+        if image_to_process.shape[:2] != self._process_size:
+             image_resized = cv2.resize(
+                 image_to_process,
+                 (self._process_size[1], self._process_size[0]), # cv2 uses (width, height)
                  interpolation=cv2.INTER_NEAREST
              )
-             if len(obs[self._image_key].shape) == 3 and obs[self._image_key].shape[-1] == 1 and len(image_process_size.shape) == 2:
-                 image_process_size = np.expand_dims(image_process_size, axis=-1)
-             obs[self._image_key] = image_process_size
+             # Handle grayscale case where resize might remove the channel dim
+             if len(image_to_process.shape) == 3 and image_to_process.shape[-1] == 1 and len(image_resized.shape) == 2:
+                 image_resized = np.expand_dims(image_resized, axis=-1)
+             obs[self._image_key] = image_resized
 
         ram_state = obs.get('ram')
-        mask = np.zeros(self._process_size, dtype=np.uint8)
+        mask = np.zeros(self._process_size, dtype=np.uint8) # Mask uses (height, width)
 
         if ram_state is not None:
             try:
                 _detect_objects_ram(self.objects, ram_state, hud=False)
 
-                player = self.objects[0] if self.objects else None
-                if player and player.visible and hasattr(player, 'xy'):
-                    raw_coords = player.xy
-                    scaled_x, scaled_y = self._scale_coords(*raw_coords)
-                    #print(f"[Pacman Coords] Step: Scaled=({scaled_x}, {scaled_y}) Raw={raw_coords}")
+                #counter = 0
+                # Iterate through all detected objects to find ghosts (KEEP THIS LOGIC)
+                for obj in self.objects:
+                    if obj and obj.category == 'Ghost' and obj.visible and hasattr(obj, 'xy'):
+                        raw_coords = obj.xy
+                        scaled_x, scaled_y = self._scale_coords(*raw_coords)
 
-                    y1 = max(0, scaled_y - self._patch_radius)
-                    y2 = min(self._process_size[0], scaled_y + self._patch_radius + 1)
-                    x1 = max(0, scaled_x - self._patch_radius)
-                    x2 = min(self._process_size[1], scaled_x + self._patch_radius + 1)
+                        # Calculate 9x9 patch boundaries (using radius 4)
+                        y1 = max(0, scaled_y - self._patch_radius)
+                        y2 = min(self._process_size[0], scaled_y + self._patch_radius + 1)
+                        x1 = max(0, scaled_x - self._patch_radius)
+                        x2 = min(self._process_size[1], scaled_x + self._patch_radius + 1)
 
-                    mask[y1:y2, x1:x2] = 1
+                        #Muestra las coordenadas de la mascara
+                        #print(f"Ghost {counter+1} coordinates: ({scaled_x}, {scaled_y})")
+                        #counter += 1
+
+                        # Set the patch area to 1 in the mask
+                        mask[y1:y2, x1:x2] = 1
+                      
+            except IndexError:
+                 pass
             except Exception as e:
                 pass
 
-        obs[self._mask_key] = mask
+        obs[self._mask_key] = mask # Assign the generated GHOST mask to the key (now 'pacman_mask')
 
-        if 'pacman_coords' in obs: # Keep removing old key just in case
+        # Remove obsolete keys if they somehow persist
+        if 'ghost_mask' in obs and self._mask_key != 'ghost_mask':
+            del obs['ghost_mask']
+        if 'pacman_coords' in obs:
             del obs['pacman_coords']
-
         if 'pacman_coords_scaled' in obs:
             del obs['pacman_coords_scaled']
 
