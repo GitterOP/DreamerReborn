@@ -6,6 +6,7 @@ import pathlib
 import re
 import sys #Variables mantenidas por el interprete
 import warnings
+import time
 
 try:
   import rich.traceback #mejora la salida de los errores
@@ -41,6 +42,7 @@ import common
 
 
 def main():
+  start_time = time.time() # Record start time
 
   #configs = yaml.safe_load((
       #pathlib.Path(sys.argv[0]).parent / 'configs.yaml').read_text())
@@ -226,6 +228,9 @@ def main():
     except Exception:
       pass
 
+  end_time = time.time() # Record end time
+  elapsed_time = end_time - start_time
+  print(f"--- Total execution time: {elapsed_time:.2f} seconds ---")
 
 if __name__ == '__main__':
   main()
