@@ -51,7 +51,7 @@ def main():
   #Se carga la configuración por defecto
   yaml = YAML()
   #configs = yaml.load((pathlib.Path(sys.argv[0]).parent / 'configs.yaml').read_text())
-  configs = yaml.load((pathlib.Path(sys.argv[0]).parent / 'mini_configs.yaml').read_text())
+  configs = yaml.load((pathlib.Path(sys.argv[0]).parent / 'full_configs.yaml').read_text())
   parsed, remaining = common.Flags(configs=['defaults']).parse(known_only=True)
   config = common.Config(configs['defaults'])
   for name in parsed.configs:
@@ -59,7 +59,7 @@ def main():
   config = common.Flags(config).parse(remaining)
 
   # --- Force sequential execution for debugging prints ---
-  print("!!! Forcing sequential environment execution (envs_parallel='none') for debug prints !!!")
+  print("!!! Forcing sequential environment execution for debug prints !!!")
   #config = config.update({'envs_parallel': 'none'})
   # --- End forcing sequential execution ---
 
