@@ -255,12 +255,12 @@ def main():
   #Función que define el paso de entrenamiento
   def train_step(tran, worker):
     if should_train(step):
-      print(f'--- Training step {step.value} ---')
+      #print(f'--- Training step {step.value} ---')
       for _ in range(config.train_steps):
         mets = train_agent(next(train_dataset))
         [metrics[key].append(value) for key, value in mets.items()]
     if should_log(step):
-      print(f'--- Logging step {step.value} ---')
+      #print(f'--- Logging step {step.value} ---')
       for name, values in metrics.items():
         logger.scalar(name, np.array(values, np.float64).mean())
         metrics[name].clear()
