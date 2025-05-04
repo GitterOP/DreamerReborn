@@ -44,14 +44,14 @@ import common
 def main():
   start_time = time.time() # Record start time
   print("--- Starting main function ---")
-  print("Version de dv2:",1.1,1.1,"-"*50)
+  print("Version de dv2:",11,"-"*50)
   #configs = yaml.safe_load(
       #pathlib.Path(sys.argv[0]).parent / 'configs.yaml').read_text())
   
   #Se carga la configuración por defecto
   yaml = YAML()
   #configs = yaml.load((pathlib.Path(sys.argv[0]).parent / 'configs.yaml').read_text())
-  configs = yaml.load((pathlib.Path(sys.argv[0]).parent / 'mini_configs.yaml').read_text())
+  configs = yaml.load((pathlib.Path(sys.argv[0]).parent / 'full_configs.yaml').read_text())
   parsed, remaining = common.Flags(configs=['defaults']).parse(known_only=True)
   config = common.Config(configs['defaults'])
   for name in parsed.configs:
