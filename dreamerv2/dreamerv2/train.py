@@ -44,7 +44,7 @@ import common
 def main():
   start_time = time.time() # Record start time
   print("--- Starting main function ---")
-  print("Version de dv2:",4.14,"-"*50)
+  print("Version de dv2:",1.2,"-"*50)
   #configs = yaml.safe_load(
       #pathlib.Path(sys.argv[0]).parent / 'configs.yaml').read_text())
   
@@ -57,6 +57,11 @@ def main():
   for name in parsed.configs:
     config = config.update(configs[name])
   config = common.Flags(config).parse(remaining)
+
+  # --- Force sequential execution for debugging prints ---
+  print("!!! Forcing sequential environment execution (envs_parallel='none') for debug prints !!!")
+  #config = config.update({'envs_parallel': 'none'})
+  # --- End forcing sequential execution ---
 
   #Se configura el directorio de logs
   logdir = pathlib.Path(config.logdir).expanduser()
@@ -118,8 +123,6 @@ def main():
       # Add Pacman detection and resizing wrapper
       env = common.PacmanDetectionAndResizeWrapper(
           env,
-          template_path=config.pacman_templates_path,
-          threshold=config.pacman_threshold,
           process_size=config.atari_process_size # Final size (e.g., 64x64)
       )
       print(f"Aplicado PacmanDetectionAndResizeWrapper, procesando a {config.atari_process_size}")
@@ -142,16 +145,42 @@ def main():
     logger.scalar(f'{mode}_return', score)
     logger.scalar(f'{mode}_length', length)
     for key, value in ep.items():
+      # Log Pacman mask info if present (e.g., average activation)
+      if key == 'pacman_mask':
+          logger.scalar(f'mean_{mode}_pacman_mask_active', value.mean()) # Avg activation (should be small)
+
+      # --- Removed coordinate logging ---
+
       if re.match(config.log_keys_sum, key):
         logger.scalar(f'sum_{mode}_{key}', ep[key].sum())
       if re.match(config.log_keys_mean, key):
-        logger.scalar(f'mean_{mode}_{key}', ep[key].mean())
+        # Avoid double logging if already handled above
+        if key not in ['pacman_mask', 'pacman_coords_scaled']:
+             logger.scalar(f'mean_{mode}_{key}', ep[key].mean())
       if re.match(config.log_keys_max, key):
         logger.scalar(f'max_{mode}_{key}', ep[key].max(0).mean())
     should = {'train': should_video_train, 'eval': should_video_eval}[mode]
     if should(step):
       for key in config.log_keys_video:
-        logger.video(f'{mode}_policy_{key}', ep[key])
+        # Ensure the key exists before logging video
+        if key in ep:
+             # Log the mask as a video too if requested
+             if key == 'pacman_mask':
+                 # Convert mask to 3 channels for video logging if needed
+                 mask_video = ep[key]
+                 if mask_video.ndim == 3 and mask_video.shape[-1] == 1: # (T, H, W, 1)
+                     mask_video = np.repeat(mask_video, 3, axis=-1) # (T, H, W, 3)
+                 elif mask_video.ndim == 2: # (T, H, W) -> Add channel and repeat
+                     mask_video = np.expand_dims(mask_video, axis=-1)
+                     mask_video = np.repeat(mask_video, 3, axis=-1)
+
+                 # Scale mask values (0, 1) to (0, 255) for video
+                 logger.video(f'{mode}_policy_{key}', (mask_video * 255).astype(np.uint8))
+             # Don't log coordinates as video
+             elif key != 'pacman_coords_scaled':
+                 logger.video(f'{mode}_policy_{key}', ep[key])
+        else:
+             print(f"Warning: Video log key '{key}' not found in episode data.")
     replay = dict(train=train_replay, eval=eval_replay)[mode]
     logger.add(replay.stats, prefix=mode)
     logger.write()
@@ -160,12 +189,14 @@ def main():
   print("--- Creating environments ---")
   #Se crean los entornos de entrenamiento y evaluación
   num_eval_envs = min(config.envs, config.eval_eps)
+  # --- Ensure sequential execution based on updated config ---
   if config.envs_parallel == 'none':
     train_envs = [make_env('train') for _ in range(config.envs)]
     print(f"Entornos de entrenamiento creados: {config.task}")
     eval_envs = [make_env('eval') for _ in range(num_eval_envs)]
     print(f"Entornos de evaluación creados: {config.task}")
   else:
+    print(f"WARNING: envs_parallel is '{config.envs_parallel}', debug prints might not show.")
     make_async_env = lambda mode: common.Async(
         functools.partial(make_env, mode), config.envs_parallel)
     train_envs = [make_async_env('train') for _ in range(config.envs)]

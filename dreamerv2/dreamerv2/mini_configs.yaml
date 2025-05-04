@@ -88,7 +88,7 @@ defaults:
 atari:
 
   task: atari_ms_pacman
-  atari_render_size: [128, 128] # Initial size for detection
+  atari_render_size: [64, 64] # Initial size for detection
   atari_process_size: [64, 64]  # Final size for model input
   encoder: {mlp_keys: '$^', cnn_keys: 'image,pacman_mask'} # Add pacman_mask
   decoder: {mlp_keys: '$^', cnn_keys: 'image,pacman_mask'} # Add pacman_mask
