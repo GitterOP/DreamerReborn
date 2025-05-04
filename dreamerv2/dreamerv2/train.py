@@ -6,6 +6,7 @@ import pathlib
 import re
 import sys #Variables mantenidas por el interprete
 import warnings
+import time #manejo de tiempo
 
 try:
   import rich.traceback #mejora la salida de los errores
@@ -41,6 +42,7 @@ import common
 
 
 def main():
+  start_time = time.time() # Record start time
   print("--- Starting main function ---")
   print("Version de dv2:",5,"-"*50)
   #configs = yaml.safe_load(
@@ -252,6 +254,9 @@ def main():
       env.close()
     except Exception:
       pass
+  end_time = time.time() # Record end time
+  elapsed_time = end_time - start_time
+  print(f"--- Total execution time: {elapsed_time:.2f} seconds ---")
 
 
 if __name__ == '__main__':
