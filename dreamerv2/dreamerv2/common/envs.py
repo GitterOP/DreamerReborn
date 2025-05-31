@@ -728,13 +728,8 @@ class PacmanDetectionAndResizeWrapper(GymWrapper):
                     y2 = min(self._process_size[0], scaled_y + 4)
                     x1 = scaled_x
                     x2 = min(self._process_size[1], scaled_x + 4)
+                    mask[y1:y2, x1:x2] = 1
 
-                    # Ensure coordinates are within bounds before slicing
-                    y1 = max(0, y1)
-                    x1 = max(0, x1)
-                    
-                    if y1 < y2 and x1 < x2: # Ensure the slice is valid
-                        mask[y1:y2, x1:x2] = 1
             except Exception as e:
                 pass
 
