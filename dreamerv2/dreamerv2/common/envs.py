@@ -643,7 +643,7 @@ class PacmanDetectionAndResizeWrapper(GymWrapper): # Reverted class name
         self._process_size = tuple(process_size)
         self._image_key = self._obs_key
         self._mask_key = mask_key # Will use 'pacman_mask' by default
-        self._patch_radius = 4 # Keep radius for 9x9 patch
+        # self._patch_radius = 4 # Keep radius for 9x9 patch # Removed _patch_radius
 
         try:
             self.objects = _init_objects_ram(hud=False)
@@ -736,11 +736,11 @@ class PacmanDetectionAndResizeWrapper(GymWrapper): # Reverted class name
                         raw_coords = obj.xy
                         scaled_x, scaled_y = self._scale_coords(*raw_coords)
 
-                        # Calculate 9x9 patch boundaries (using radius 4)
-                        y1 = max(0, scaled_y - self._patch_radius)
-                        y2 = min(self._process_size[0], scaled_y + self._patch_radius + 1)
-                        x1 = max(0, scaled_x - self._patch_radius)
-                        x2 = min(self._process_size[1], scaled_x + self._patch_radius + 1)
+                        # Calculate 4x4 patch boundaries, (scaled_x, scaled_y) is top-left
+                        y1 = scaled_y
+                        y2 = min(self._process_size[0], scaled_y + 4)
+                        x1 = scaled_x
+                        x2 = min(self._process_size[1], scaled_x + 4)
 
                         #Muestra las coordenadas de la mascara
                         #print(f"Ghost {counter+1} coordinates: ({scaled_x}, {scaled_y})")
