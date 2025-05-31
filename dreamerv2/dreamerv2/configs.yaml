@@ -27,7 +27,7 @@ defaults:
   log_keys_sum: '^$'
   log_keys_mean: '^$'
   log_keys_max: '^$'
-  precision: 16
+  precision: 32
   jit: True
 
   # Agent
