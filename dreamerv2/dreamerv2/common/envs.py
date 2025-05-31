@@ -628,7 +628,7 @@ class OneHotAction:
 class PacmanDetectionAndResizeWrapper(GymWrapper):
     """
     Detects Pacman using RAM state on 64x64 input frames,
-    generates a 64x64 binary mask with a 7x7 patch around Pacman's scaled coordinates.
+    generates a 64x64 binary mask with a 4x4 patch around Pacman's scaled top-left coordinates.
     """
     def __init__(self, env, process_size=(64, 64), image_key='image', mask_key='pacman_mask'):
         inner_obs_key = None
@@ -642,7 +642,7 @@ class PacmanDetectionAndResizeWrapper(GymWrapper):
         self._process_size = tuple(process_size)
         self._image_key = self._obs_key
         self._mask_key = mask_key
-        self._patch_radius = 3
+        # self._patch_radius = 3 # Removed
 
         try:
             self.objects = _init_objects_ram(hud=False)
@@ -723,10 +723,11 @@ class PacmanDetectionAndResizeWrapper(GymWrapper):
                     scaled_x, scaled_y = self._scale_coords(*raw_coords)
                     #print(f"[Pacman Coords] Step: Scaled=({scaled_x}, {scaled_y}) Raw={raw_coords}")
 
-                    y1 = max(0, scaled_y - self._patch_radius)
-                    y2 = min(self._process_size[0], scaled_y + self._patch_radius + 1)
-                    x1 = max(0, scaled_x - self._patch_radius)
-                    x2 = min(self._process_size[1], scaled_x + self._patch_radius + 1)
+                    patch_size = 4 # Pacman is 4x4, (scaled_x, scaled_y) is top-left
+                    y1 = max(0, scaled_y)
+                    y2 = min(self._process_size[0], scaled_y + patch_size)
+                    x1 = max(0, scaled_x)
+                    x2 = min(self._process_size[1], scaled_x + patch_size)
 
                     mask[y1:y2, x1:x2] = 1
             except Exception as e:
