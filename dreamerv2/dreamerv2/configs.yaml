@@ -19,10 +19,10 @@ defaults:
   prefill: 1000
   pretrain: 1
   train_every: 10
-  train_steps: 5
+  train_steps: 4 #de 5 a 4
   expl_until: 0
-  replay: {capacity: 1e4, ongoing: False, minlen: 50, maxlen: 50, prioritize_ends: True}
-  dataset: {batch: 8, length: 20}
+  replay: {capacity: 1e4, ongoing: False, minlen: 50, maxlen: 50, prioritize_ends: True} #capacity de 1e4 a 2e6
+  dataset: {batch: 50, length: 50} #batch de 8 a 50, length de 20 a 50
   log_keys_video: ['image']
   log_keys_sum: '^$'
   log_keys_mean: '^$'
@@ -56,9 +56,9 @@ defaults:
   critic_opt: {opt: adam, lr: 2e-4, eps: 1e-5, clip: 100, wd: 1e-6}
   discount: 0.99
   discount_lambda: 0.95
-  imag_horizon: 5
+  imag_horizon: 15 # de 5 a 15
   actor_grad: auto
-  actor_grad_mix: 0.1
+  actor_grad_mix: 1.0 # de a.1 a 1.0 
   actor_ent: 2e-3
   slow_target: True
   slow_target_update: 100
