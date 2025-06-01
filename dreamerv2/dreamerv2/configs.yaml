@@ -87,7 +87,7 @@ atari:
   time_limit: 27000
   action_repeat: 4
   steps: 5e7
-  eval_every: 2.5e5
+  eval_every: 2.5e4
   log_every: 1e4
   prefill: 50000
   train_every: 16
