@@ -42,7 +42,7 @@ import common
 
 
 def main():
-  print("Version:",1,"-"*50)
+  print("Version:",101,"-"*50)
   start_time = time.time() # Record start time
 
   #configs = yaml.safe_load((
