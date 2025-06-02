@@ -29,7 +29,7 @@ defaults:
   log_keys_sum: '^$'
   log_keys_mean: '^$'
   log_keys_max: '^$'
-  precision: 32
+  precision: 16
   jit: True
 
   # Pacman Detection defaults
