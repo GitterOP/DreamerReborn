@@ -86,7 +86,7 @@ atari:
   decoder: {mlp_keys: '$^', cnn_keys: 'image'}
   time_limit: 27000
   action_repeat: 4
-  steps: 5e7
+  steps: 1.25e6
   eval_every: 2.5e4
   log_every: 1e4
   prefill: 50000
